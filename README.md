@@ -8,6 +8,7 @@ python -m venv venv
 pip install -r requirements.txt
 python ocelot.py
 
+should be able to handle audio files but is not tested 
 
 
 
