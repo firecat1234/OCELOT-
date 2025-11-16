@@ -1,0 +1,24 @@
+[project]
+name = "ocelot"
+version = "0.1.0"
+description = "Optical Character recognition Editor by Location Of Text"
+authors = [
+    {name = "firecat1234",email = "132525599+firecat1234@users.noreply.github.com"}
+]
+license = {text = "GPL-3.0-only"}
+readme = "README.md"
+requires-python = "^3.10"
+dependencies = [
+    "easyocr (>=1.7.2,<2.0.0)",
+    "opencv-python (>=4.10.0,<5.0.0)",
+    "pillow (>=12.0.0,<13.0.0)",
+    "kivy (>=2.3.1,<3.0.0)",
+    "speechrecognition (>=3.14.3,<4.0.0)",
+    "pyaudio (>=0.2.14,<0.3.0)",
+    "numpy (>=1.26,<2.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

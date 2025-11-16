@@ -1,6 +1,0 @@
-easyocr
-opencv-python
-Pillow
-tk
-SpeechRecognition
-pyaudio

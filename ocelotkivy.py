@@ -20,6 +20,11 @@ import easyocr
 import kivy
 kivy.require("2.1.0")  # or whichever version you use
 
+from kivy.config import Config
+
+# Disable the legacy Windows pen input provider which crashes on newer drivers
+Config.set("input", "wm_pen", "wm_pen,disable")
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scatter import Scatter
@@ -185,35 +190,37 @@ class ImageViewer(Scatter):
         base_corner_size_px = 8
         corner_size = max(2.0, base_corner_size_px / self.scale)
 
-        with self.box_graphics:
-            # Draw existing boxes
-            if self.boxes:
-                for box in self.boxes:
-                    x_min, y_min_img = box.xy_a
-                    x_max, y_max_img = box.xy_b
-                    y_min_kivy = self.img_h - y_max_img
-                    y_max_kivy = self.img_h - y_min_img
-                    
-                    is_dragging_this_box = (self.dragging_box is box)
-                    conf = box.conf
-                    line_width = 2.5 if is_dragging_this_box else 1.5
+        # Draw existing boxes
+        if self.boxes:
+            for box in self.boxes:
+                x_min, y_min_img = box.xy_a
+                x_max, y_max_img = box.xy_b
+                y_min_kivy = self.img_h - y_max_img
+                y_max_kivy = self.img_h - y_min_img
+                
+                is_dragging_this_box = (self.dragging_box is box)
+                conf = box.conf
+                line_width = 2.5 if is_dragging_this_box else 1.5
 
-                    if is_dragging_this_box:
-                        Color(1, 0, 1, 1) # Magenta
-                    elif conf > 0.85: Color(0, 1, 0, 1) # Green
-                    elif conf > 0.5: Color(1, 1, 0, 1) # Yellow
-                    else: Color(1, 0, 0, 1) # Red
+                if is_dragging_this_box:
+                    self.box_graphics.add(Color(1, 0, 1, 1)) # Magenta for active drag
+                elif conf > 0.85:
+                    self.box_graphics.add(Color(0, 1, 0, 1)) # Green
+                elif conf > 0.5:
+                    self.box_graphics.add(Color(1, 1, 0, 1)) # Yellow
+                else:
+                    self.box_graphics.add(Color(1, 0, 0, 1)) # Red
 
-                    Line(points=[x_min, y_min_kivy, x_max, y_min_kivy, x_max, y_max_kivy, x_min, y_max_kivy], width=line_width, close=True)
+                self.box_graphics.add(Line(points=[x_min, y_min_kivy, x_max, y_min_kivy, x_max, y_max_kivy, x_min, y_max_kivy], width=line_width, close=True))
+                
+                corners_kivy = [(x_min, y_min_kivy), (x_max, y_min_kivy), (x_max, y_max_kivy), (x_min, y_max_kivy)]
+                for cx, cy in corners_kivy:
+                    self.box_graphics.add(Rectangle(pos=(cx - corner_size / 2, cy - corner_size / 2), size=(corner_size, corner_size)))
                     
-                    corners_kivy = [(x_min, y_min_kivy), (x_max, y_min_kivy), (x_max, y_max_kivy), (x_min, y_max_kivy)]
-                    for cx, cy in corners_kivy:
-                        Rectangle(pos=(cx - corner_size / 2, cy - corner_size / 2), size=(corner_size, corner_size))
-                        
-            # Draw the new box being actively drawn (if any)
-            if self.drawing_box and self.draw_rect_instruction:
-                Color(0, 0.8, 1, 0.8) # Cyan for drawing new box
-                Line(rectangle=self.draw_rect_instruction, width=1.5)
+        # Draw the new box being actively drawn (if any)
+        if self.drawing_box and self.draw_rect_instruction:
+            self.box_graphics.add(Color(0, 0.8, 1, 0.8)) # Cyan for drawing new box
+            self.box_graphics.add(Line(rectangle=self.draw_rect_instruction, width=1.5))
 
     # --- Mouse/Touch Handling --- 
     def on_touch_down(self, touch):
@@ -694,16 +701,9 @@ class OcelotApp(App):
         self.save_popup = None
         self.undo_stack = [] # Initialize undo stack
         self.redo_stack = [] # Initialize redo stack
+        self._keyboard = None
+        self._keyboard_target = None
         
-        # --- Keyboard Setup ---
-        self._keyboard = Window.request_keyboard(self._keyboard_closed, self, 'text')
-        if self._keyboard.widget:
-            # If it exists, this widget is a VKeyboard object which you can use
-            # to change the keyboard layout.
-            pass
-        self._keyboard.bind(on_key_down=self._on_key_down)
-        # ---------------------
-
         # Set window icon if platform supports it
         try:
             # from kivy.core.window import Window # <-- Removed redundant import
@@ -822,6 +822,15 @@ class OcelotApp(App):
         self.image_viewer.bind(on_box_modified=self.handle_box_modified)
         img_container.add_widget(self.image_viewer)
         root.add_widget(img_container)
+
+        # --- Keyboard Setup ---
+        self._keyboard_target = self.image_viewer
+        self._keyboard = Window.request_keyboard(self._keyboard_closed, self._keyboard_target, 'text')
+        if self._keyboard.widget:
+            # When present, widget is a VKeyboard instance that can be customized
+            pass
+        self._keyboard.bind(on_key_down=self._on_key_down)
+        # ---------------------
         
         # ==========================================================================
         # Text Results Area (Below image viewer)
@@ -877,10 +886,18 @@ class OcelotApp(App):
         
         return root
 
+    def to_window(self, x, y, initial=True, relative=False):
+        """Proxy Widget.to_window so newer Kivy builds can compute viewport padding."""
+        if self.root:
+            return self.root.to_window(x, y, initial=initial, relative=relative)
+        return x, y
+
     # --- Keyboard Handling --- 
     def _keyboard_closed(self):
-        self._keyboard.unbind(on_key_down=self._on_key_down)
-        self._keyboard = None
+        if self._keyboard:
+            self._keyboard.unbind(on_key_down=self._on_key_down)
+            self._keyboard = None
+        self._keyboard_target = None
 
     def _on_key_down(self, keyboard, keycode, text, modifiers):
         # keycode is a tuple (code, string_representation)
